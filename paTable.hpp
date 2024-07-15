@@ -9,7 +9,7 @@ const uint16_t cKanaTableSingle[] = {
 	0x00C8,	0x00C9,	0x00CA,	0x00CB,	0x00CC,	/* な　に　ぬ　ね　の */
 	0x00CD,	0x00D0,	0x00D3,	0x00D6,	0x00D9,	/* は　ひ　ふ　へ　ほ */
 	0x00DC,	0x00DD,	0x00DE,	0x00DF,	0x00E0,	/* ま　み　む　め　も */
-	0x00E7,	0x00E8,	0x00E9,	0x00EA,	0x00EB,	/* ら　リ　る　れ　ろ */
+	0x00E7,	0x00E8,	0x00E9,	0x00EA,	0x00EB,	/* ら　り　る　れ　ろ */
 	0x00AA,	0x00AC,	0x00AE,	0x00B0,	0x00B2,	/* が　ぎ　ぐ　げ　ご */
 	0x00B4,	0x00B6,	0x00B8,	0x00BA,	0x00BC,	/* ざ　じ　ず　ぜ　ぞ */
 	0x00BE,	0x00C0,	0x00C3,	0x00C5,	0x00C7,	/* だ　ぢ　づ　で　ど */
@@ -48,14 +48,16 @@ const char cPATableSingle[][6] = {
 	"n a",	"J i",	"n M",	"n e",	"n o",	/* な　に　ぬ　ね　の */
 	"h a",	"C i",	"p\\ M","h e",	"h o",	/* は　ひ　ふ　へ　ほ */
 	"m a",	"m' i",	"m M",	"m e",	"m o",	/* ま　み　む　め　も */
-	"4 a",	"4' i",	"4 M",	"4 e",	"4 o",	/* ら　リ　る　れ　ろ */
+	"4 a",	"4' i",	"4 M",	"4 e",	"4 o",	/* ら　り　る　れ　ろ */
 	"g a",	"g' i",	"g M",	"g e",	"g o",	/* が　ぎ　ぐ　げ　ご */
 	"dz a",	"dZ i",	"dz M",	"dz e", "dz o",	/* ざ　じ　ず　ぜ　ぞ */
 	"d a",	"dZ i",	"dz M",	"d e",	"d o",	/* だ　ぢ　づ　で　ど */
 	"b a",	"b' i",	"b M",	"b e",	"b o",	/* ば　び　ぶ　べ　ぼ */
 	"p a",	"p' i",	"p M",	"p e",	"p o",	/* ぱ　ぴ　ぷ　ぺ　ぽ */
 	"j a",	"j M",	"j o",					/* や　ゆ　よ */
-	"w a",	"w i",	"w e",	"o",	"N\\"	/* わ　ゐ　ゑ　を　ん*/
+	"w a",	"w i",	"w e",	"o",	"N\\",	/* わ　ゐ　ゑ　を　ん*/
+	"m",	"m'",	"N",	"N'",	"J",
+	"n"
 };
 
 const char cPATableMulti[][6] = {

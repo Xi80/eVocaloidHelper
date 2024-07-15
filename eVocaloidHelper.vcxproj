@@ -128,13 +128,15 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="eVocaloidHelper.cpp" />
+    <ClCompile Include="lyricsHelper.cpp" />
     <ClCompile Include="paConvert.cpp" />
     <ClCompile Include="midi.cpp" />
     <ClCompile Include="midi.hpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="paConvert.h" />
-    <ClInclude Include="paTable.h" />
+    <ClInclude Include="lyricsHelper.hpp" />
+    <ClInclude Include="paConvert.hpp" />
+    <ClInclude Include="paTable.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

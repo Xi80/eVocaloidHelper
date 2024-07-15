@@ -1,61 +1,43 @@
-#include "paConvert.h"
-#include "paTable.h"
-
-
-
-static int makeTokenList(uint16_t* dest, uint8_t* src, size_t maxDestLen, size_t srcLen);
+#include "paConvert.hpp"
+#include "paTable.hpp"
 
 static int isMultiChar(uint8_t c);
 static int inTable(uint16_t token);
-static int checkN(char* dest, uint8_t current, uint8_t next);
+static int getTypeN(uint8_t current, uint8_t next);
 
-int GetPAString(char* dest, uint8_t* srcText, size_t maxDestLen, size_t srcLen)
+
+int GetPAString(char* dest, uint8_t* paArray, size_t maxDestLen, size_t srcLen)
 {
 	int strLen = 0;
-	uint16_t tokens[32];
-	int tokenCount = makeTokenList(tokens, srcText, sizeof(tokens) / sizeof(tokens[0]), srcLen);
+	const char* token;
 
-	if (tokenCount <= 0) {
+	if (srcLen <= 0) {
 		/* 適切な歌詞データなし */
 		return -1;
 	}
 
-	for (int i = 0; i < tokenCount; i++) {
-		uint8_t currentIndex = inTable(tokens[i]);
+	for (int i = 0; i < srcLen; i++) {
+		/* 制御文字 */
+		if (paArray[i] >= 0xF0)continue;
 
-		if (tokens[i] == '|' || tokens[i] == '-' || tokens[i] == ',')continue;
-
-		/* "ん" */
-		if (tokens[i] == 0x00F1) {
-			strLen += checkN(dest + strLen, currentIndex, (i < tokenCount - 1) ? inTable(tokens[i + 1]) : 0x0000);
+		if (paArray[i] & 0x80) {
+			token = cPATableMulti[paArray[i] & 0x7F];
 		}
 		else {
-			if (tokens[i] & 0xFF00) {
-				int tokenLength = strlen(cPATableMulti[currentIndex]);
-#ifdef _WIN32
-				memcpy_s(dest + strLen, maxDestLen, cPATableMulti[currentIndex], tokenLength);
-#else 
-				memcpy(dest + strLen, cPATableMulti[currentIndex], tokenLength);
-#endif
-				strLen += tokenLength;
-			}
-			else {
-				int tokenLength = strlen(cPATableSingle[currentIndex]);
-#ifdef _WIN32
-				memcpy_s(dest + strLen, maxDestLen, cPATableSingle[currentIndex], tokenLength);
-#else 
-				memcpy(dest + strLen cPATableSingle[currentIndex], tokenLength);
-#endif
-				strLen += tokenLength;
-			}
+			token = cPATableSingle[paArray[i]];
 		}
 
+		int tokenLength = strlen(token);
+#ifdef _WIN32
+		memcpy_s(dest + strLen, maxDestLen, token, tokenLength);
+#else
+		memcpy(dest + strLen, token, tokenLength);
+#endif
+		strLen += tokenLength;
 		dest[strLen++] = ',';
 	}
-
-	dest[strLen] = 0x00;
-
-	return tokenCount;
+	dest[strLen - 1] = 0x00;
+	return strLen;
 }
 
 int GetPASysEx(uint8_t* dest, char* srcPA, size_t maxDestLen, size_t srcLen)
@@ -63,9 +45,20 @@ int GetPASysEx(uint8_t* dest, char* srcPA, size_t maxDestLen, size_t srcLen)
 	return 0;
 }
 
-static int makeTokenList(uint16_t* dest, uint8_t* src, size_t maxDestLen, size_t srcLen) {
+const char* GetPAChar(uint8_t index)
+{
+	if (index & 0x80) {
+		return cPATableMulti[index & 0x7F];
+	}
+	else {
+		return cPATableSingle[index];
+	}
+}
+
+int GetPAIndexArray(uint8_t* dest, uint8_t* src, size_t maxDestLen, size_t srcLen) {
 	/* 半角文字とひらがな以外には基本的に対応しない */
 	int tokenCount = 0;
+	int idx = -1;
 
 	for (int i = 0; i < srcLen; i++) {
 		if (isMultiChar(src[i])) {
@@ -79,31 +72,47 @@ static int makeTokenList(uint16_t* dest, uint8_t* src, size_t maxDestLen, size_t
 				uint16_t token = ((uint16_t)secondChar & 0x00FF) | ((uint16_t)firstChar << 8);
 
 				/* テーブル検索 */
-				if (inTable(token)) {
-					dest[tokenCount++] = token;
+
+				if ((idx = inTable(token)) >= 0) {
+					dest[tokenCount++] = 0x80 | (uint8_t)idx;
 					i += 2;
 					continue;
 				}
 
 				/* 見つからない */
-				if (inTable((uint16_t)firstChar)) {
-					dest[tokenCount++] = (uint16_t)firstChar;
+				if ((idx = inTable(firstChar)) >= 0) {
+					/* ん */
+					if (idx == 72) {
+						int idx2 = inTable(secondChar);
+						dest[tokenCount++] = getTypeN(idx, idx2);
+					}
+					else {
+						dest[tokenCount++] = (uint8_t)idx;
+					}
+
 				}
 			}
 			else {
 				/* 続く文字が2バイト文字でないため判別しない */
-				if (inTable((uint16_t)firstChar)) {
-					dest[tokenCount++] = (uint16_t)firstChar;
+				if ((idx = inTable((uint16_t)firstChar)) >= 0) {
+					dest[tokenCount++] = (uint8_t)idx;
 				}
 			}
 		}
 		else {
 			/* "|","-",","以外の文字は読み飛ばす */
-			if (src[i] == '|' || src[i] == '-' || src[i] == ',') {
-				dest[tokenCount++] = (uint16_t)src[i];
-			}
-			else {
-				continue;
+			switch (src[i]) {
+			case '|':
+				dest[tokenCount++] = 0xF0;
+				break;
+			case '-':
+				dest[tokenCount++] = 0xF1;
+				break;
+			case ',':
+				dest[tokenCount++] = 0xF2;
+				break;
+			default:
+				break;
 			}
 		}
 	}
@@ -129,14 +138,10 @@ static int inTable(uint16_t token) {
 			}
 		}
 	}
-	return 0;
+	return -1;
 }
 
-static int checkN(char* dest, uint8_t current, uint8_t next) {
-	const char pattern[][6] = {
-		"N\\","m","m'","N","N'","J","n"
-	};
-
+static int getTypeN(uint8_t current, uint8_t next) {
 	int type = -1;
 	char c1;
 	char c2[2];
@@ -153,7 +158,7 @@ static int checkN(char* dest, uint8_t current, uint8_t next) {
 	}
 
 	/* 語末? */
-	if (next == '|' || next == 0x00) {
+	if (next >= 0xF0) {
 		type = 0;
 	}
 
@@ -195,11 +200,6 @@ static int checkN(char* dest, uint8_t current, uint8_t next) {
 	if (type == -1) {
 		type = 6;
 	}
-#ifdef _WIN32
-	strcpy_s(dest, 6, pattern[type]);
-#else 
-	strcpy(dest, pattern[type]);
-#endif
 
-	return strlen(pattern[type]);
+	return type + 72;
 }

@@ -2,10 +2,13 @@
 #include <mmsystem.h>
 #include <stdio.h>
 
-#include "paConvert.h"
+#include "lyricsHelper.hpp"
 #include "midi.hpp"
 
 #pragma comment(lib,"winmm.lib")
+
+HMIDIIN hMidiIn = NULL;
+HMIDIOUT hMidiOut = NULL;
 
 /* Win32APIのコールバック関数 */
 void CALLBACK MidiInProc(HMIDIIN hMidiIn, UINT wMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2);
@@ -13,12 +16,14 @@ void CALLBACK MidiInProc(HMIDIIN hMidiIn, UINT wMsg, DWORD_PTR dwInstance, DWORD
 /* MIDIパーサのコールバック関数 */
 void NoteOnCallback(struct tMidiChannel* channelInfo, uint8_t channel, uint8_t noteNumber, uint8_t velocity);
 void NoteOffCallback(uint8_t channel, uint8_t noteNumber);
+void ControlChangeCallback(struct tMidiChannel* channelInfo, uint8_t channel, uint8_t number, uint8_t value);
+void PitchBendCallback(struct tMidiChannel* channelInfo, uint8_t channel, int16_t value);
 
 struct tMidiCallback tMidiCb = {
 	NoteOnCallback,
 	NoteOffCallback,
-	nullptr,
-	nullptr,
+	PitchBendCallback,
+	ControlChangeCallback,
 	nullptr,
 	nullptr,
 	nullptr,
@@ -29,17 +34,33 @@ struct tMidiCallback tMidiCb = {
 
 kMidi kMidiParser(&tMidiCb);
 
-int main(int argc, char** argv) {
-	uint8_t lyrics[] = {
-		0x82,0xc6,0x82,0xa4,0x82,0xab,0x82,0xe5,0x82,0xa4,0x82,0xc6,0x82,0xc1,0x82,0xab,0x82,0xe5,0x82,0xab,0x82,0xe5,0x82,0xa9,0x82,0xab,0x82,0xe5,0x82,0xad
-	};
-	char buf[512];
-	GetPAString(buf, lyrics, 512, sizeof(lyrics));
-	printf("%s\n", buf);
-	return 0;
+void SendSysExMessage(uint8_t* sysexData, size_t length) {
+	MIDIHDR midiHdr;
+	ZeroMemory(&midiHdr, sizeof(MIDIHDR));
+	midiHdr.lpData = (LPSTR)sysexData;
+	midiHdr.dwBufferLength = length;
+	midiHdr.dwBytesRecorded = length;
+	midiHdr.dwFlags = 0;
 
-	HMIDIIN hMidiIn = NULL;
-	HMIDIOUT hMidiOut = NULL;
+	midiOutPrepareHeader(hMidiOut, &midiHdr, sizeof(MIDIHDR));
+	midiOutLongMsg(hMidiOut, &midiHdr, sizeof(MIDIHDR));
+	midiOutUnprepareHeader(hMidiOut, &midiHdr, sizeof(MIDIHDR));
+}
+
+void SendShortMessage(uint8_t* msg, size_t length) {
+	DWORD message = msg[0];
+	message |= (msg[1] << 8);
+	message |= (((length > 2) ? msg[2] : 0) << 16);
+	midiOutShortMsg(hMidiOut, message);
+}
+
+kLyricsHelper helper(SendShortMessage, SendSysExMessage);
+
+int main(int argc, char** argv) {
+
+	helper.Open("rufuran.txt");
+
+
 	UINT numInDevs, numOutDevs;
 	MMRESULT result;
 	UINT inDevID = -1, outDevID = -1;
@@ -100,10 +121,23 @@ int main(int argc, char** argv) {
 			return 1;
 		}
 	}
-
+	/* XGシステムオン */
+	uint8_t xgon[] = {
+		0xF0,0x43,0x10,0x4C,0x00,0x00,0x7E,0x00,0xF7
+	};
+	SendSysExMessage(xgon, sizeof(xgon));
 	printf("MIDI input started. Press Enter to stop...\n");
+	helper.Convert();
+
 	getchar(); // 最初のgetcharは改行を受け取るため
 	getchar(); // 実際の入力を待機するため
+
+	/* オールサウンドオフ */
+	uint8_t aso[] = { 0xB0,120,0 };
+	for (int i = 0; i < 16; i++) {
+		aso[0] = 0xB0 | i;
+		SendShortMessage(aso, 3);
+	}
 
 	if (hMidiIn) {
 		midiInStop(hMidiIn);
@@ -113,6 +147,8 @@ int main(int argc, char** argv) {
 	if (hMidiOut) {
 		midiOutClose(hMidiOut);
 	}
+
+	helper.Close();
 
 	return 0;
 }
@@ -144,9 +180,50 @@ void CALLBACK MidiInProc(HMIDIIN hMidiIn, UINT wMsg, DWORD_PTR dwInstance, DWORD
 }
 
 void NoteOnCallback(struct tMidiChannel* channelInfo, uint8_t channel, uint8_t noteNumber, uint8_t velocity) {
-	printf("Note On  %02X %02X %02X\n", channel, noteNumber, velocity);
+	uint8_t message[3];
+	message[0] = 0x90 | (channel & 0x0F);
+	message[1] = noteNumber;
+	message[2] = 127;
+	SendShortMessage(message, 3);
+	helper.OnNoteOn();
 }
 
 void NoteOffCallback(uint8_t channel, uint8_t noteNumber) {
-	printf("Note Off %02X %02X\n", channel, noteNumber);
+	uint8_t message[3];
+	message[0] = 0x80 | (channel & 0x0F);
+	message[1] = noteNumber;
+	message[2] = 0;
+	SendShortMessage(message, 3);
+	helper.OnNoteOff();
+}
+
+void ControlChangeCallback(struct tMidiChannel* channelInfo, uint8_t channel, uint8_t number, uint8_t value) {
+	uint8_t message[3];
+	switch (number) {
+	case 112:
+		if (value)helper.SetPrevLine();
+		break;
+	case 113:
+		if (value)helper.SetNextLine();
+		break;
+	case 114:
+		if (value)helper.SetInitLine();
+		break;
+	default:
+		message[0] = 0xB0 | (channel & 0x0F);
+		message[1] = number;
+		message[2] = value;
+		SendShortMessage(message, 3);
+		break;
+	}
+}
+
+void PitchBendCallback(struct tMidiChannel* channelInfo, uint8_t channel, int16_t value) {
+	uint16_t pitchBend = (uint16_t)(value + 0x2000) & 0x3FFF;
+
+	uint8_t message[3];
+	message[0] = 0xE0 | (channel & 0x0F);        // ステータスバイト (ピッチベンド + チャンネル)
+	message[1] = pitchBend & 0x7F;               // LSB
+	message[2] = (pitchBend >> 7) & 0x7F;        // MSB
+	SendShortMessage(message, 3);
 }
